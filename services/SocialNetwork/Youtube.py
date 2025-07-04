@@ -1,9 +1,10 @@
 from services import check_and_refresh_google_credentials,download_video_media_from_cloud
-from models import User
-from schemas import VideoUpLoadRequest,GoogleVideoStatsResponse
+from models import User,SocialVideoCreate
+from schemas import VideoUpLoadRequest,GoogleVideoStatsResponse,SocialPlatform
 from googleapiclient.discovery import build,Resource
 from googleapiclient.http import MediaIoBaseUpload
 from fastapi import HTTPException, status
+from .SocialUtils import add_social_video
 async def get_youtube_service(user:User) -> Resource:
     credentials = await check_and_refresh_google_credentials(user)
     return build(
@@ -49,8 +50,13 @@ async def upload_video_to_youtube(user:User,upload_request:VideoUpLoadRequest)->
             media_body=media
         )
         response= insert_request.execute()
-        print(response)
         video_id =response['id']
+        social_video_data = SocialVideoCreate(
+            user_id=str(user.id),
+            platform=SocialPlatform.GOOGLE,
+            video_url=f'https://www.youtube.com/watch?v={video_id}'
+        )
+        await add_social_video(social_video_data)
         return f'https://www.youtube.com/watch?v={video_id}'
     except Exception as e:
         raise HTTPException(
@@ -77,7 +83,6 @@ async def get_youtube_video_stats(user:User,video_id:str)->GoogleVideoStatsRespo
             platform='google',
             title=snippet.get('title', ''),
             description=snippet.get('description', ''),
-            privacy_status=snippet.get('privacyStatus', 'private'),
             platform_url=f'https://www.youtube.com/watch?v={video_id}',
             view_count=int(stats.get('viewCount', 0)),
             like_count=int(stats.get('likeCount', 0)),

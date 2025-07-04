@@ -29,10 +29,14 @@ async def get_user_by_email(email: str)-> User | None:
     try:
         user = await collection.find_one({"email": email})
         if user:
-            return User(**user)
+            try:
+                user_obj = User(**user)
+                return user_obj
+            except Exception as e:
+                return None
         return None
     except Exception as e:
-        print("Error fetching user by email")
+        print("Error fetching user by email",e)
         return None
 async def create_user(user:UserCreate) ->User:
     exitsting_user = await get_user_by_username(user.username)
@@ -130,3 +134,9 @@ async def change_password(user_id: str, current_password: str, new_password: str
     new_hashed = hash_password(new_password)
     await collection.update_one({"_id": user_id}, {"$set": {"password": new_hashed}})
     return True
+
+async def get_user_by_tiktok_open_id(open_id: str) -> User | None:
+    user =await collection.find_one({"social_credentials.tiktok.open_id": open_id})
+    if user:
+            return User(**user)
+    return None

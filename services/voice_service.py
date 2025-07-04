@@ -8,109 +8,108 @@ from uuid import uuid4
 AVAILABLE_VOICES = [
     {
         "id": "v1",
-        "name": "Alex",
-        "gender": "male", 
+        "name": "Zephyr",
+        "gender": "female", 
         "language": "English",
         "accent": "American",
-        "tags": ["clear", "professional", "authoritative"],
-        "groq_voice": "Fritz-PlayAI"  # Male, clear voice
+        "tags": ["bright", "higher pitch"],
+        "gemini_voice": "Zephyr"  # Male, clear voice
     },
     {
         "id": "v2", 
-        "name": "Sophie",
-        "gender": "female",
+        "name": "Puck",
+        "gender": "male",
         "language": "English", 
         "accent": "British",
-        "tags": ["warm", "friendly", "engaging"],
-        "groq_voice": "Eleanor-PlayAI"  # Female, British-like voice
+        "tags": ["upbeat", "middle pitch"],
+        "gemini_voice": "Puck" 
     },
     {
         "id": "v3",
-        "name": "Michael", 
+        "name": "Charon", 
         "gender": "male",
         "language": "English",
         "accent": "Australian", 
-        "tags": ["casual", "conversational", "relaxed"],
-        "groq_voice": "Calum-PlayAI"  # Male, casual voice
+        "tags": ["informative", "lower pitch"],
+        "gemini_voice": "Charon" 
     },
     {
         "id": "v4",
-        "name": "Emma",
+        "name": "Kore",
         "gender": "female",
         "language": "English", 
         "accent": "American",
-        "tags": ["energetic", "youthful", "upbeat"],
-        "groq_voice": "Cheyenne-PlayAI"  # Female, energetic voice
+        "tags": ["firm", "middle pitch"],
+        "gemini_voice": "Kore" 
     },
     {
         "id": "v5",
-        "name": "Sam",
-        "gender": "neutral",
+        "name": "Fenrir",
+        "gender": "male",
         "language": "English",
-        "tags": ["neutral", "balanced", "clear"],
-        "groq_voice": "Quinn-PlayAI"  # Neutral voice
+        "tags": ["excitable", "lower middle pitch"],
+        "gemini_voice": "Fenrir"  
     },
     {
         "id": "v6",
-        "name": "Hiroshi",
-        "gender": "male",
-        "language": "Japanese", 
-        "tags": ["professional", "calm", "measured"],
-        "groq_voice": "Mikail-PlayAI"  # Male, professional voice
+        "name": "Leda",
+        "gender": "female",
+        "language": "English", 
+        "tags": ["youthful", "higher pitch"],
+        "gemini_voice": "Leda"  
     },
     {
         "id": "v7",
-        "name": "Maria",
-        "gender": "female",
-        "language": "Spanish",
-        "accent": "Latin American",
-        "tags": ["warm", "friendly", "expressive"], 
-        "groq_voice": "Celeste-PlayAI"  # Female, expressive voice
+        "name": "Orus",
+        "gender": "male",
+        "language": "English",
+        "accent": "American",
+        "tags": ["Firm", "Lower middle pitch"], 
+        "gemini_voice": "Orus"
     },
     {
         "id": "v8",
-        "name": "Antoine",
-        "gender": "male",
-        "language": "French",
-        "tags": ["sophisticated", "clear", "articulate"],
-        "groq_voice": "Angelo-PlayAI"  # Male, sophisticated voice
+        "name": "Aoede",
+        "gender": "female",
+        "language": "English",
+        "tags": ["breezy", "middle pitch"],
+        "gemini_voice": "Aoede" 
     },
-    # Add more Groq voices to give users more options
     {
         "id": "v9",
-        "name": "Ruby",
+        "name": "Callirrhoe",
         "gender": "female",
         "language": "English",
         "accent": "American",
-        "tags": ["mature", "authoritative", "news"],
-        "groq_voice": "Ruby-PlayAI"  # Female, news anchor style
+        "tags": ["easy-going", "middle pitch"],
+        "gemini_voice": "Callirrhoe" 
     },
     {
         "id": "v10",
-        "name": "Thunder",
-        "gender": "male",
-        "language": "English",
-        "accent": "American",
-        "tags": ["deep", "powerful", "dramatic"],
-        "groq_voice": "Thunder-PlayAI"  # Male, deep voice
-    },
-    {
-        "id": "v11",
-        "name": "Jennifer",
+        "name": "Autonoe",
         "gender": "female",
         "language": "English",
         "accent": "American",
-        "tags": ["professional", "clear", "business"],
-        "groq_voice": "Jennifer-PlayAI"  # Female, business voice
+        "tags": ["bright", "middle pitch"],
+        "gemini_voice": "Autonoe"  
     },
     {
-        "id": "v12",
-        "name": "Mason",
+        "id": "v11",
+        "name": "Enceladus",
         "gender": "male",
         "language": "English",
         "accent": "American",
-        "tags": ["young", "friendly", "casual"],
-        "groq_voice": "Mason-PlayAI"  # Male, young voice
+        "tags": ["breathy", "lower pitch"],
+        "gemini_voice": "Enceladus" 
+    },
+    {
+        "id": "v12",
+        "name": "Iapetus",
+        "gender": "male",
+        "language": "English",
+        "accent": "American",
+        "tags": ["clear", "lower middle pitch"],
+        "gemini_voice": "Iapetus"  # Male, young voice
     }
 ]
 
@@ -184,21 +183,21 @@ async def generate_voice_audio(text: str, voice_id: str, speed: float = 1.0, pit
                 
         # Fallback to default voice if not found
         if not voice_config:
-            print(f"Warning: Voice {voice_id} not found, using default Fritz-PlayAI")
+            print(f"Warning: Voice {voice_id} not found, using default Kore")
             voice_config = {
                 "id": voice_id,
                 "name": "Default",
-                "groq_voice": "Fritz-PlayAI"
+                "gemini_voice": "Kore"
             }
         
-        # Use Groq TTS with the mapped voice
-        groq_voice = voice_config["groq_voice"]
-        print(f"Using Groq voice: {groq_voice} for voice_id: {voice_id}")
+        # Use Gemini TTS with the mapped voice
+        gemini_voice = voice_config["gemini_voice"]
+        print(f"Using Gemini voice: {gemini_voice} for voice_id: {voice_id}")
         
         # Generate speech using async version with Cloudinary upload
         from services.Media.text_to_speech import generate_speech_async
-        result = await generate_speech_async(text, groq_voice, user_id)
-        
+        result = await generate_speech_async(text, gemini_voice, user_id)
+      
         if not result:
             raise Exception("Failed to generate audio")
         

@@ -50,7 +50,7 @@ class VideoFromComponentsRequest(BaseModel):
 class MediaResponse(BaseModel):
     id: str = Field(..., description="Media ID")
     user_id: str = Field(..., description="User ID who owns the media")
-    title: str = Field(..., description="Title of the media")
+    title: Optional[str] = Field(None, description="Title of the media")
     content: str = Field(..., description="Prompt or text content for the media")
     media_type: MediaType = Field(..., description="Type of media")
     url: str = Field(..., description="Cloudinary URL")

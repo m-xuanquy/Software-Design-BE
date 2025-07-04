@@ -6,7 +6,7 @@ import tempfile
 from datetime import datetime
 import asyncio
 import httpx
-
+from services.voice_service import get_voice_by_id
 from api.deps import get_current_user
 from models.user import User
 from services.Media.media_utils import create_video, create_multi_scene_video, add_subtitles, upload_media, get_media_by_id
@@ -15,6 +15,9 @@ from services.subtitle_service import generate_srt_content
 from config import TEMP_DIR
 from schemas.media import MediaResponse, CompleteVideoRequest, VideoFromComponentsRequest
 from models.user import User
+
+# Import validation functions
+from services.Media.media_validation import is_valid_audio_media, is_valid_video_media, is_valid_image_media
 
 router = APIRouter(prefix="/api/video", tags=["video"])
 
@@ -59,17 +62,35 @@ async def create_complete_video(
     #                 "audio_id": "fallback_audio"
     #             }
     #         else:
-    #             print(f"❌ Fallback audio file not found: {fallback_audio_path}")
-    #             raise HTTPException(status_code=500, detail="Failed to generate audio and no fallback available")
+    #             print(f"❌ Fallback audio file not found: {fallback_audio_path}")    #             raise HTTPException(status_code=500, detail="Failed to generate audio and no fallback available")
+    
     try:
-        user_id = str(current_user.id)        # Step 1: Generate audio from script
+        user_id = str(current_user.id)
+        
+        # Validate user_id is a valid ObjectId format
+        try:
+            from bson import ObjectId
+            ObjectId(user_id)  # This will raise exception if invalid
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid user ID format")
+        
+        # Step 1: Generate audio from script
         print("Generating audio from script...")
         audio_path = None
         fallback_audio_path = os.path.join(TEMP_DIR, "fallback_audio.wav")
         fallback_audio_url = "https://res.cloudinary.com/dsozekr7k/video/upload/v1750415589/audio/pymxnd8dbtlb9rsqwmxe.wav"
-
+        
+        # Get voice configuration and convert to actual voice name
+        voice_data = get_voice_by_id(request.voice_id)
+        if not voice_data:
+            raise HTTPException(status_code=400, detail=f"Voice {request.voice_id} not found")
+            
+        # Extract the actual voice name for TTS
+        actual_voice_name = voice_data.get("name", "Kore")  # Use voice name, fallback to Kore
+        print(f"🎤 Using voice: {actual_voice_name} (mapped from {request.voice_id})")
+        
         try:
-            audio_result = await generate_speech_async(request.script_text, request.voice_id, user_id)            
+            audio_result = await generate_speech_async(request.script_text, actual_voice_name, user_id)
             if audio_result and audio_result.get("audio_url"):
                 # Download audio from Cloudinary to temp file for video creation
                 audio_path = os.path.join(TEMP_DIR, f"audio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav")
@@ -96,9 +117,7 @@ async def create_complete_video(
                     print(f"✅ Fallback audio downloaded: {fallback_audio_path}")
                 except Exception as download_err:
                     print(f"❌ Failed to download fallback audio: {download_err}")
-                    raise HTTPException(status_code=500, detail="Failed to generate audio and fallback download failed.")
-
-            # Use fallback audio file
+                    raise HTTPException(status_code=500, detail="Failed to generate audio and fallback download failed.")            # Use fallback audio file
             audio_path = fallback_audio_path
             print(f"🔄 Using fallback audio file: {fallback_audio_path}")
             audio_result = {
@@ -107,10 +126,6 @@ async def create_complete_video(
                 "audio_id": "fallback_audio"
             }
 
-        except Exception as final_err:
-            print(f"❌ Unexpected failure: {final_err}")
-            raise HTTPException(status_code=500, detail="Unexpected failure in audio processing.")
-    
         if not audio_path or not os.path.exists(audio_path):
             raise HTTPException(status_code=500, detail="No audio file available for video creation")
           # Step 2: Get background images
@@ -128,11 +143,18 @@ async def create_complete_video(
         else:
             raise HTTPException(status_code=400, detail="No background image provided")
         
-        # Download all background images
+        # Download all background images with validation
         for i, bg_id in enumerate(background_ids):
             background_media = await get_media_by_id(bg_id)
             if not background_media:
                 print(f"Warning: Background image {bg_id} not found, skipping")
+                continue
+            
+            # Validate media is actually an image
+            if not is_valid_image_media(background_media):
+                print(f"Warning: Media {bg_id} is not a valid image file. "
+                      f"Media type: {background_media.get('media_type')}, "
+                      f"Public ID: {background_media.get('public_id')}")
                 continue
                 
             # Download background image to temp file
@@ -236,8 +258,7 @@ async def create_complete_video(
                 "script_text": request.script_text[:200]
             },
             "created_at": datetime.now(),
-            "updated_at": datetime.now()
-        }
+            "updated_at": datetime.now()        }
         
     except Exception as e:
         print(f"Error creating complete video: {e}")
@@ -254,10 +275,26 @@ async def create_video_from_components(
     try:
         user_id = str(current_user.id)
         
-        # Get audio file
+        # Validate user_id is a valid ObjectId format
+        try:
+            from bson import ObjectId
+            ObjectId(user_id)  # This will raise exception if invalid
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid user ID format")
+        
+        # Get audio file and validate it's actually audio
         audio_media = await get_media_by_id(request.audio_file_id)
         if not audio_media:
             raise HTTPException(status_code=404, detail="Audio file not found")
+        
+        # Validate media is actually audio
+        if not is_valid_audio_media(audio_media):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Media with ID {request.audio_file_id} is not a valid audio file. "
+                       f"Media type: {audio_media.get('media_type')}, "
+                       f"Public ID: {audio_media.get('public_id')}"
+            )
           # Get background images
         background_paths = []
         background_ids = []
@@ -280,11 +317,18 @@ async def create_video_from_components(
             with open(audio_path, "wb") as f:
                 f.write(audio_response.content)
             
-            # Download all background images
+            # Download all background images with validation
             for i, bg_id in enumerate(background_ids):
                 background_media = await get_media_by_id(bg_id)
                 if not background_media:
                     print(f"Warning: Background image {bg_id} not found, skipping")
+                    continue
+                
+                # Validate media is actually an image
+                if not is_valid_image_media(background_media):
+                    print(f"Warning: Media {bg_id} is not a valid image file. "
+                          f"Media type: {background_media.get('media_type')}, "
+                          f"Public ID: {background_media.get('public_id')}")
                     continue
                     
                 background_path = os.path.join(TEMP_DIR, f"bg_{bg_id}_{i}.jpg")
@@ -366,10 +410,19 @@ async def download_video(
     Download video file
     """
     try:
-        # Get video metadata
+        # Get video metadata and validate it's actually a video
         video_media = await get_media_by_id(video_id)
         if not video_media:
             raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Validate media is actually a video
+        if not is_valid_video_media(video_media):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Media with ID {video_id} is not a valid video file. "
+                       f"Media type: {video_media.get('media_type')}, "
+                       f"Public ID: {video_media.get('public_id')}"
+            )
           # Check if user owns the video
         if str(video_media["user_id"]) != str(current_user.id):
             raise HTTPException(status_code=403, detail="Access denied")        
@@ -405,6 +458,15 @@ async def preview_video(
         video_media = await get_media_by_id(video_id)
         if not video_media:
             raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Validate media is actually a video
+        if not is_valid_video_media(video_media):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Media with ID {video_id} is not a valid video file. "
+                       f"Media type: {video_media.get('media_type')}, "
+                       f"Public ID: {video_media.get('public_id')}"
+            )
           # Check if user owns the video
         if str(video_media["user_id"]) != str(current_user.id):
             raise HTTPException(status_code=403, detail="Access denied")
@@ -419,3 +481,44 @@ async def preview_video(
     except Exception as e:
         print(f"Error getting video preview: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get video: {str(e)}")
+
+@router.get("/validate-media/{media_id}")
+async def validate_media_type(
+    media_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Test endpoint to validate media type detection
+    """
+    try:
+        media_data = await get_media_by_id(media_id)
+        if not media_data:
+            raise HTTPException(status_code=404, detail="Media not found")
+        
+        # Check if user owns the media
+        if str(media_data["user_id"]) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        return {
+            "media_id": media_id,
+            "media_info": {
+                "stored_media_type": media_data.get("media_type"),
+                "public_id": media_data.get("public_id"),
+                "url": media_data.get("url"),
+                "filename": media_data.get("title")
+            },
+            "validation_results": {
+                "is_valid_audio": is_valid_audio_media(media_data),
+                "is_valid_video": is_valid_video_media(media_data),
+                "is_valid_image": is_valid_image_media(media_data)
+            },
+            "recommendations": {
+                "can_use_for_audio": is_valid_audio_media(media_data),
+                "can_use_for_background": is_valid_image_media(media_data),
+                "can_preview_as_video": is_valid_video_media(media_data)
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error validating media: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to validate media: {str(e)}")

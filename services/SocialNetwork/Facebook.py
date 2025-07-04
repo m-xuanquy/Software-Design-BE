@@ -1,10 +1,14 @@
 from schemas import VideoUpLoadRequest,FacebookVideoStatsResponse
-from models import User
+from models import User,SocialVideoCreate
 from services import check_facebook_credentials, get_media_by_id
+from .SocialUtils import add_social_video
 from fastapi import HTTPException, status
-import json
+from config import user_collection
 from schemas import SocialPlatform
 import requests
+from typing import Any
+from bson import ObjectId
+collection = user_collection()
 async def upload_video_to_facebook(user: User,page_id:str, upload_request: VideoUpLoadRequest) -> str:
     try:
         access_token =await check_facebook_credentials(user)
@@ -53,7 +57,6 @@ async def upload_video_to_facebook(user: User,page_id:str, upload_request: Video
         
         response = requests.post(upload_url, data=upload_data)
         result = response.json()
-        print(f"Facebook upload response: {result}")  # Debugging line
         if "error" in result:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -65,6 +68,12 @@ async def upload_video_to_facebook(user: User,page_id:str, upload_request: Video
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Video upload failed, no video ID returned"
             )
+        social_video_data = SocialVideoCreate(
+            user_id=str(user.id),
+            platform=SocialPlatform.FACEBOOK,
+            video_url=f"https://www.facebook.com/{video_id}"
+        )
+        await add_social_video(social_video_data)
         return f"https://www.facebook.com/{video_id}"
     except HTTPException as e:
         raise  HTTPException(
@@ -76,7 +85,7 @@ async def get_page_by_pageid(user:User,page_id:str):
         if page.get('id') == page_id:
             return page
         
-async def get_facebook_video_stats(user: User, video_id: str) -> FacebookVideoStatsResponse:
+async def get_facebook_video_stats(user: User, video_id: str,page_id:str=None) -> FacebookVideoStatsResponse:
     try:
         access_token = await check_facebook_credentials(user)
         
@@ -128,7 +137,6 @@ async def get_facebook_video_stats(user: User, video_id: str) -> FacebookVideoSt
             platform=SocialPlatform.FACEBOOK,
             title=video_info.get("title", ""),
             description=video_info.get("description", ""),
-            privacy_status=video_info.get("privacy_status", "UNKNOWN"),
             platform_url=video_info.get("permalink_url",f"https://www.facebook.com/{video_id}"),
             created_at=video_info.get("created_at"),
             view_count=video_info.get("views", 0),
@@ -161,7 +169,6 @@ async def get_video_basic_info(video_id: str, access_token: str) -> dict:
             "title": data.get("title", ""),
             "description": data.get("description", ""),
             "created_at": data.get("created_time"),
-            "privacy_status": data.get("privacy", {}).get("value", "SELF"),
             "platform_url": data.get("permalink_url", ""),
             "post_id": data.get("post_id", ""),
             "views": data.get("views", 0)
@@ -220,3 +227,34 @@ async def get_video_shares(post_id: str, access_token: str) -> int:
         return 0
     except Exception as e:
         return 0
+    
+async def get_pages_of_user(user:User)-> dict[str,Any]:
+    try:
+        user = await collection.find_one({"_id":ObjectId(user.id)})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        if not user.get('social_credentials') or 'facebook' not in user['social_credentials']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User does not have Facebook credentials"
+            )
+        facebook_credentials = user['social_credentials']['facebook']
+        if not facebook_credentials.get('pages'):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No Facebook pages found for the user"
+            )
+        pages = [
+            {k:v for k,v in page.items() if k!="access_token"}
+            for page in facebook_credentials['pages']
+        ]
+        return {"pages": pages}
+    except HTTPException as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch pages: {e.detail}"
+        )
+   

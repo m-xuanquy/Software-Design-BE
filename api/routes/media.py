@@ -8,6 +8,9 @@ import os
 from uuid import uuid4
 from config import TEMP_DIR
 
+# Import validation functions
+from services.Media.media_validation import is_valid_audio_media, is_valid_video_media, is_valid_image_media
+
 router = APIRouter(prefix="/media", tags=["Media"])
 
 @router.post("/upload", response_model=MediaResponse)
@@ -118,13 +121,40 @@ async def get_user_media(
     current_user = Depends(get_current_user)
 ):
     """Get current user's media with pagination and optional filtering"""
+    print(f"🎯 Getting media for user {current_user.id}, type: {media_type}, page: {page}, size: {size}")
+    
     result = await get_media_by_user(str(current_user.id), page, size, media_type)
     
-    media_responses = [MediaResponse(**media) for media in result["media"]]
+    # Additional client-side validation if filtering by media type
+    media_responses = []
+    for media in result["media"]:
+        # Apply enhanced validation based on requested media type
+        include_media = True
+        if media_type:
+            # Debug info for each media item
+            print(f"📋 Checking media {media.get('id')}: type={media.get('media_type')}, public_id={media.get('public_id')}, url={media.get('url', '')[:100]}")
+            
+            if media_type == MediaType.VIDEO and not is_valid_video_media(media):
+                print(f"❌ Filtering out {media.get('id')} - not valid video (type: {media.get('media_type')}, public_id: {media.get('public_id')})")
+                include_media = False
+            elif media_type == MediaType.AUDIO and not is_valid_audio_media(media):
+                print(f"❌ Filtering out {media.get('id')} - not valid audio (type: {media.get('media_type')}, public_id: {media.get('public_id')})")
+                include_media = False
+            elif media_type == MediaType.IMAGE and not is_valid_image_media(media):
+                print(f"❌ Filtering out {media.get('id')} - not valid image (type: {media.get('media_type')}, public_id: {media.get('public_id')})")
+                include_media = False
+            
+            if include_media:
+                print(f"✅ Including {media.get('id')} - valid {media_type.value}")
+        
+        if include_media:
+            media_responses.append(MediaResponse(**media))
+    
+    print(f"✅ Returning {len(media_responses)} validated media items")
     
     return MediaListResponse(
         media=media_responses,
-        total=result["total"],
+        total=len(media_responses),  # Update total to reflect filtered count
         page=result["page"],
         size=result["size"]
     )
@@ -163,3 +193,43 @@ async def delete_media_endpoint(
         success=True,
         message="Media deleted successfully"
     )
+
+@router.get("/debug/all")
+async def debug_all_user_media(
+    current_user = Depends(get_current_user)
+):
+    """Debug endpoint to see all user media with validation info"""
+    try:
+        # Get all media without filtering
+        result = await get_media_by_user(str(current_user.id), 1, 100, None)
+        
+        debug_info = []
+        for media in result["media"]:
+            debug_info.append({
+                "id": media.get("id"),
+                "title": media.get("title", media.get("content", "")[:50]),
+                "stored_media_type": media.get("media_type"),
+                "public_id": media.get("public_id"),
+                "url": media.get("url"),
+                "validation": {
+                    "is_valid_video": is_valid_video_media(media),
+                    "is_valid_audio": is_valid_audio_media(media),
+                    "is_valid_image": is_valid_image_media(media)
+                },
+                "created_at": media.get("created_at")
+            })
+        
+        return {
+            "total_media": len(debug_info),
+            "media_breakdown": {
+                "videos": len([m for m in debug_info if m["validation"]["is_valid_video"]]),
+                "audio": len([m for m in debug_info if m["validation"]["is_valid_audio"]]),
+                "images": len([m for m in debug_info if m["validation"]["is_valid_image"]]),
+                "other": len([m for m in debug_info if not any(m["validation"].values())])
+            },
+            "media_details": debug_info
+        }
+        
+    except Exception as e:
+        print(f"Error in debug endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Debug error: {str(e)}")

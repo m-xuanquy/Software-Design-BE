@@ -1,5 +1,7 @@
-from groq import Groq
-from config import GROQ_KEY, TEMP_DIR
+from google import genai
+from google.genai import types
+import wave
+from config import GEMINI_KEY, TEMP_DIR
 import os
 import asyncio
 from datetime import datetime
@@ -8,58 +10,101 @@ import hashlib
 # Cache for deduplication
 _audio_cache = {}
 
-def generate_speech(text, output_file="speech.wav", voice="Fritz-PlayAI"):
-    """Generate speech from text using Groq API"""
-    client = Groq(api_key=GROQ_KEY)
+# Available voices from Gemini API (based on the image provided)
+AVAILABLE_VOICES = [
+    "Zephyr", "Puck", "Charon", 
+    "Kore", "Fenrir", "Leda", 
+    "Orus", "Aoede", "Callirrhoe", 
+    "Autonoe", "Enceladus", "Iapetus", 
+    "Umbriel", "Algieba", "Despina", 
+    "Erinome", "Algenib", "Rasalgethi", 
+    "Laomedeia", "Achernar", "Alnilam", 
+    "Schedar", "Gacrux", "Pulcherrima", 
+    "Achird", "Zubenelgenubi", "Vindematrix", 
+    "Sadachbia", "Sadaltager", "Sulafat"
+]
+
+# Default fallback voice
+DEFAULT_VOICE = "Kore"
+
+def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
+    """Helper function to save PCM data as WAV file"""
+    with wave.open(filename, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(rate)
+        wf.writeframes(pcm)
+
+def generate_speech(text, output_file="speech.wav", voice="Kore"):
+    """Generate speech from text using Gemini API"""
+    client = genai.Client(api_key=GEMINI_KEY)
     
-    model = "playai-tts"
-    response_format = "wav"
-    
-    # Available voices from Groq API
-    available_voices = [
-        "Aaliyah-PlayAI", "Adelaide-PlayAI", "Angelo-PlayAI", "Arista-PlayAI",
-        "Atlas-PlayAI", "Basil-PlayAI", "Briggs-PlayAI", "Calum-PlayAI",
-        "Celeste-PlayAI", "Cheyenne-PlayAI", "Chip-PlayAI", "Cillian-PlayAI",
-        "Deedee-PlayAI", "Eleanor-PlayAI", "Fritz-PlayAI", "Gail-PlayAI",
-        "Indigo-PlayAI", "Jennifer-PlayAI", "Judy-PlayAI", "Mamaw-PlayAI",
-        "Mason-PlayAI", "Mikail-PlayAI", "Mitch-PlayAI", "Nia-PlayAI",
-        "Quinn-PlayAI", "Ruby-PlayAI", "Thunder-PlayAI"
-    ]
-    
-    # Use Fritz-PlayAI as fallback if voice not in available list
-    if voice not in available_voices:
-        print(f"Voice '{voice}' not available. Using Fritz-PlayAI as fallback.")
-        voice = "Fritz-PlayAI"
+    # Use Kore as fallback if voice not in available list
+    if voice not in AVAILABLE_VOICES:
+        print(f"Voice '{voice}' not available. Using {DEFAULT_VOICE} as fallback.")
+        voice = DEFAULT_VOICE
     
     try:
-        response = client.audio.speech.create(
-            model=model,
-            voice=voice,
-            input=text,
-            response_format=response_format
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-tts",
+            contents=text,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=voice,
+                        )
+                    )
+                ),
+            )
         )
         
-        response.write_to_file(output_file)
+        # Extract audio data and save to WAV file
+        audio_data = response.candidates[0].content.parts[0].inline_data.data
+        wave_file(output_file, audio_data)
         return output_file
+        
     except Exception as e:
-        # Final fallback to Fritz-PlayAI if anything fails
-        if voice != "Fritz-PlayAI":
-            print(f"Voice '{voice}' failed: {e}. Trying Fritz-PlayAI...")
-            response = client.audio.speech.create(
-                model=model,
-                voice="Fritz-PlayAI",
-                input=text,
-                response_format=response_format
-            )
-            response.write_to_file(output_file)
-            return output_file
+        # Final fallback to Kore if anything fails
+        if voice != DEFAULT_VOICE:
+            print(f"Voice '{voice}' failed: {e}. Trying {DEFAULT_VOICE}...")
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash-preview-tts",
+                    contents=text,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name=DEFAULT_VOICE,
+                                )
+                            )
+                        ),
+                    )
+                )
+                
+                audio_data = response.candidates[0].content.parts[0].inline_data.data
+                wave_file(output_file, audio_data)
+                return output_file
+            except Exception as fallback_error:
+                raise fallback_error
         else:
             raise e
 
-async def generate_speech_async(text: str, voice_id: str = "Fritz-PlayAI", user_id: str = None):
+async def generate_speech_async(text: str, voice_id: str = DEFAULT_VOICE, user_id: str = None):
     """
-    Generate speech from text using Groq API (async wrapper)
+    Generate speech from text using Gemini API (async wrapper)
     Uploads to Cloudinary and returns media info
+    
+    Args:
+        text: Text to convert to speech
+        voice_id: Gemini voice to use
+        user_id: Optional user ID for Cloudinary upload
+        
+    Returns:
+        Dictionary with audio info
     """
     try:
         # Create unique output file path
@@ -108,6 +153,7 @@ async def generate_speech_async(text: str, voice_id: str = "Fritz-PlayAI", user_
                 "cloudinary_public_id": upload_result["public_id"]
             }
         else:
+            print("No user_id provided, returning local file path only.")
             # Fallback to local file if no user_id
             return {
                 "audio_path": audio_path,

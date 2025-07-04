@@ -32,7 +32,7 @@ async def generate_text_endpoint(model: Literal["deepseek", "gemini"] = Form(...
         raise HTTPException(status_code=500, detail=f"Text generation error: {str(e)}")
 
 @router.post("/tts")
-async def text_to_speech( background_tasks: BackgroundTasks,text: str = Form(...), voice: str = Form("Fritz-PlayAI")):
+async def text_to_speech( background_tasks: BackgroundTasks,text: str = Form(...), voice: str = Form("Kore")):
     """Convert text to speech"""
     output_file = os.path.join(TEMP_DIR, f"{uuid4()}.wav")
     try:

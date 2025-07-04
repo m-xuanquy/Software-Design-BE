@@ -29,6 +29,7 @@ class MediaModel(BaseModel):
     media_type: MediaType
     url: str  # Cloudinary URL
     public_id: str  # Cloudinary public ID
+    thumbnail_url: Optional[str] = None  # Thumbnail URL for videos/images
     metadata: Optional[Dict] = {}
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

@@ -5,8 +5,8 @@ from schemas import UserResponse, UserCreate, UserLogin, UserUpdate, ChangePassw
 from api.deps import get_current_user, get_current_user_optional
 from typing import Optional
 from services import create_user,authenticate_user,\
-    get_google_oauth_url, get_facebook_oauth_url,\
-    handle_facebook_oauth_callback,handle_google_callback
+    get_google_oauth_url, get_facebook_oauth_url,get_tiktok_auth_url,\
+    handle_facebook_oauth_callback,handle_google_callback,handle_tiktok_oauth_callback
 from services.Auth.FacebookAuth import handle_facebook_callback
 from services.Auth.User import update_user, change_password
 from core import create_access_token,create_refresh_token,verify_token
@@ -255,6 +255,34 @@ async def facebook_callback(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An error occurred while processing Facebook callback: {str(e)}"
             )
+@router.get("/tiktok/auth")
+async def tiktok_auth():
+    auth_url = get_tiktok_auth_url()
+    return {"auth_url": auth_url}
+@router.get("/tiktok/callback")
+async def tiktok_callback(code: str, response: Response,state:str =None):
+    try:
+        print("State:", state)
+        user = await handle_tiktok_oauth_callback(code, state)
+        access_token = create_access_token(data={"sub": user.username, "id": user.id})
+        refresh_token = create_refresh_token(data={"sub": user.username, "id": user.id})
+        response.set_cookie(
+            key= "refresh_token",
+            value=refresh_token,
+            max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # days to seconds
+            httponly=True,
+            samesite="Strict",
+            secure=False
+        )
+        frontend_url = f"{FRONTEND_URL}#access_token={access_token}"
+        return RedirectResponse(
+            url=frontend_url
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while processing TikTok callback: {str(e)}"
+        )
 @router.post("/logout")
 async def logout_user(response: Response):
     try:

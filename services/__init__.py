@@ -6,6 +6,7 @@ from .Media.media_utils import *
 from .Auth.User import *
 from .Auth.GoogleAuth import *
 from .Auth.FacebookAuth import *
+from .Auth.TikTokAuth import *
 from .trending_topics import *
 from .internet_trends import *
 from .voice_service import *

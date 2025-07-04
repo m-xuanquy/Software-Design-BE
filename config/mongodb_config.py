@@ -42,3 +42,8 @@ def trending_topics_collection():
     """Get trending topics collection"""
     db = get_database()
     return db["trending_topics"]
+
+def social_collection():
+    """Get social collection"""
+    db = get_database()
+    return db["socials"]

@@ -32,3 +32,4 @@ starlette
 together==1.5.16
 typing_extensions==4.14.0
 uvicorn==0.34.3
+imageio_ffmpeg

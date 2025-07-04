@@ -14,13 +14,12 @@ class VideoUpLoadRequest (BaseModel):
     description: Optional[str] = ""
     tags: Optional[List[str]] = []
     privacy_status:str = Field(default="private")
-    page_id: Optional[str] = None  # For Facebook Page upload
+    page_id: Optional[str] = None
 
 class VideoStatsResponse(BaseModel):
     platform:SocialPlatform
     title: str
     description: Optional[str] = ""
-    privacy_status: str
     platform_url:str
     created_at: datetime
 class GoogleVideoStatsResponse(VideoStatsResponse):
@@ -49,10 +48,9 @@ class FacebookPageListResponse(BaseModel):
 class FacebookPageVideoUploadRequest(VideoUpLoadRequest):
     page_id: str  # ID of Facebook Page to upload video
     
-# class VideoStatsResponse(BaseModel):
-#     platform: SocialPlatform
-#     platform_video_id: str
-#     view_count: Optional[int] = 0
-#     like_count: Optional[int] = 0
-#     comment_count: Optional[int] = 0
-#     last_updated: datetime
+class TikTokVideoStatsResponse(VideoStatsResponse):
+    view_count: Optional[int] = 0
+    like_count: Optional[int] = 0
+    share_count: Optional[int] = 0
+    comment_count: Optional[int] = 0
+    cover_image_url: Optional[str] = ""

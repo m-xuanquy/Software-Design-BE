@@ -43,7 +43,7 @@ class UserResponse(UserBase):
     avatar: str|None = None
     type: Literal["regular", "google", "facebook"] = Field(default="regular")
     created_at: datetime
-    social_credentials: Optional[dict] = Field(default_factory=dict)
+    # social_credentials: Optional[dict] = Field(default_factory=dict)
 
 class ChangePassword(BaseModel):
     current_password: str

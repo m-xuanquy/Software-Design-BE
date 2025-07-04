@@ -55,9 +55,21 @@ async def upload_media(file_path: str, user_id: str, folder: str = "media", reso
         media_type = MediaType.VIDEO
     elif upload_result.get("format") in ["mp3", "wav", "ogg"]:
         media_type = MediaType.AUDIO
-      # Create media document
+    
+    # Convert user_id to ObjectId for MongoDB storage
+    try:
+        from bson import ObjectId
+        if isinstance(user_id, str):
+            user_id_obj = ObjectId(user_id)
+        else:
+            user_id_obj = user_id
+    except Exception as e:
+        raise Exception(f"Invalid user_id format: {user_id}. Error: {str(e)}")
+    
+    # Create media document
     media_doc = MediaModel(
-        user_id=user_id,
+        user_id=str(user_id_obj),  # Store as string in Pydantic model
+        title=upload_result.get("original_filename", "Untitled"),
         content=prompt,
         media_type=media_type,
         url=upload_result["secure_url"],
@@ -66,13 +78,18 @@ async def upload_media(file_path: str, user_id: str, folder: str = "media", reso
         created_at=datetime.now(),
         updated_at=datetime.now()
     )
-      # Insert into MongoDB
+    
+    # Insert into MongoDB
     if not media_collection:
         raise Exception("Media collection is not initialized")
     try:
         media_dict = media_doc.model_dump(by_alias=True, exclude_unset=True)
         # Remove _id field completely to let MongoDB generate it
         media_dict.pop("_id", None)
+        
+        # Convert user_id back to ObjectId for MongoDB storage
+        media_dict["user_id"] = user_id_obj
+        
         result = await media_collection().insert_one(media_dict)
         print(f"Inserted media document into MongoDB with ID {result.inserted_id}")
     except Exception as e:
@@ -115,10 +132,28 @@ async def get_media_by_user(user_id: str, page: int = 1, size: int = 10, media_t
         from bson import ObjectId
         skip = (page - 1) * size
         
-        # Build query filter
-        query_filter = {"user_id": ObjectId(user_id)}
+        # Build query filter - try both ObjectId and string format
+        try:
+            user_id_obj = ObjectId(user_id)
+            # Query for both ObjectId and string format of user_id
+            user_query = {
+                "$or": [
+                    {"user_id": user_id_obj},
+                    {"user_id": user_id}
+                ]
+            }
+        except:
+            # If user_id is not a valid ObjectId, only query by string
+            user_query = {"user_id": user_id}
+            
+        query_filter = user_query
         if media_type:
-            query_filter["media_type"] = media_type.value
+            query_filter = {
+                "$and": [
+                    user_query,
+                    {"media_type": media_type.value}
+                ]
+            }
         
         # Get total count
         total = await media_collection().count_documents(query_filter)
@@ -151,8 +186,21 @@ async def update_media(media_id: str, user_id: str, update_data: Dict) -> Option
         # Add updated timestamp
         update_data["updated_at"] = datetime.now()
         
+        # Try both ObjectId and string format for user_id
+        try:
+            user_id_obj = ObjectId(user_id)
+            query_filter = {
+                "_id": ObjectId(media_id),
+                "$or": [
+                    {"user_id": user_id_obj},
+                    {"user_id": user_id}
+                ]
+            }
+        except:
+            query_filter = {"_id": ObjectId(media_id), "user_id": user_id}
+        
         result = await media_collection().update_one(
-            {"_id": ObjectId(media_id), "user_id": ObjectId(user_id)},
+            query_filter,
             {"$set": update_data}
         )
         
@@ -168,8 +216,21 @@ async def delete_media(media_id: str, user_id: str) -> bool:
     try:
         from bson import ObjectId
         
+        # Try both ObjectId and string format for user_id
+        try:
+            user_id_obj = ObjectId(user_id)
+            query_filter = {
+                "_id": ObjectId(media_id),
+                "$or": [
+                    {"user_id": user_id_obj},
+                    {"user_id": user_id}
+                ]
+            }
+        except:
+            query_filter = {"_id": ObjectId(media_id), "user_id": user_id}
+        
         # Get media to get public_id
-        media = await media_collection().find_one({"_id": ObjectId(media_id), "user_id": ObjectId(user_id)})
+        media = await media_collection().find_one(query_filter)
         if not media:
             return False
             
@@ -177,7 +238,7 @@ async def delete_media(media_id: str, user_id: str) -> bool:
         cloudinary.uploader.destroy(media["public_id"])
         
         # Delete from MongoDB
-        result = await media_collection().delete_one({"_id": ObjectId(media_id), "user_id": ObjectId(user_id)})
+        result = await media_collection().delete_one(query_filter)
         
         return result.deleted_count > 0
     except Exception as e:
@@ -433,3 +494,26 @@ def cleanup_temp_files(file_paths: list):
     """
     for file_path in file_paths:
         cleanup_temp_file(file_path)
+
+async def check_media_of_user(user_id:str, media_id:str) -> bool:
+    try:
+        from bson import ObjectId
+        
+        # Try both ObjectId and string format for user_id
+        try:
+            user_id_obj = ObjectId(user_id)
+            query_filter = {
+                "_id": ObjectId(media_id),
+                "$or": [
+                    {"user_id": user_id_obj},
+                    {"user_id": user_id}
+                ]
+            }
+        except:
+            query_filter = {"_id": ObjectId(media_id), "user_id": user_id}
+            
+        media = await media_collection().find_one(query_filter)
+        return media is not None
+    except Exception as e:
+        print(f"Error checking media ownership: {e}")
+        return False
