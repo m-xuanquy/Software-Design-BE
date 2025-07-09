@@ -13,12 +13,23 @@ from models.user import User
 from services.Media.media_utils import create_video, create_multi_scene_video, upload_media, get_media_by_id
 from services.Media.text_to_speech import generate_speech_async
 from services.subtitle_service import generate_srt_content, generate_subtitles_from_audio, add_subtitles
+from config.app_config import FRONTEND_URL
 from config import TEMP_DIR
+from services.Media.media_validation import is_valid_image_media, is_valid_audio_media, is_valid_video_media
 from schemas.media import MediaResponse, CompleteVideoRequest, VideoFromComponentsRequest
-from models.user import User
 
-# Import validation functions
-from services.Media.media_validation import is_valid_audio_media, is_valid_video_media, is_valid_image_media
+def convert_to_absolute_url(url: str) -> str:
+    """Convert relative URL to absolute URL using FRONTEND_URL"""
+    if url.startswith('http://') or url.startswith('https://'):
+        return url
+    elif url.startswith('/'):
+        # Relative path - combine with FRONTEND_URL
+        frontend_base = FRONTEND_URL or "http://localhost:3000"
+        return frontend_base.rstrip('/') + url
+    else:
+        # Assume it's already a relative path without leading slash
+        frontend_base = FRONTEND_URL or "http://localhost:3000"
+        return frontend_base.rstrip('/') + '/' + url
 
 router = APIRouter(prefix="/api/video", tags=["video"])
 
@@ -83,7 +94,9 @@ async def create_complete_video(
         if request.audio_url:
             # Use provided audio URL (uploaded by user or from AI generation)
             print(f"🎵 Using provided audio URL: {request.audio_url}")
-            audio_url = request.audio_url
+            # Convert relative URL to absolute URL if needed
+            audio_url = convert_to_absolute_url(request.audio_url)
+            print(f"🔗 Converted to absolute URL: {audio_url}")
         elif request.voice_id:
             # Generate audio from voice_id (existing logic)
             print("Generating audio from script...")
@@ -382,6 +395,9 @@ async def create_video_from_components(
         # Get audio URL
         audio_url = audio_media["url"]
         print(f"🎵 Using audio URL: {audio_url}")
+        # Convert relative URL to absolute URL if needed
+        audio_url = convert_to_absolute_url(audio_url)
+        print(f"🔗 Converted to absolute URL: {audio_url}")
           # Get background images
         background_paths = []
         background_ids = []
